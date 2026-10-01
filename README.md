@@ -1,3 +1,5 @@
+![CI](https://github.com/merc0303/STM32-CI-demo/actions/workflows/ci.yml/badge.svg)
+
 # stm32-ci-demo
 
 Hardware-free STM32F407 firmware with a CI pipeline: containerised cross-build,
