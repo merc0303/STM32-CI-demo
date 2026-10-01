@@ -46,7 +46,9 @@ jobs:
   simulate:
     needs: build-test
     runs-on: ubuntu-24.04
-    container: antmicro/renode:1.15.3   # verify the tag exists, then keep it pinned
+    container:
+      image: antmicro/renode:1.15.3
+      options: --user root
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -55,3 +57,13 @@ jobs:
           path: build/fw
       - name: Renode boot test
         run: renode-test sim/boot.robot
+      - name: Upload Robot logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-logs
+          path: |
+            log.html
+            report.html
+            robot_output.xml
+          if-no-files-found: ignore
