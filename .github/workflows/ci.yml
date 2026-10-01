@@ -43,6 +43,25 @@ jobs:
           name: firmware
           path: build/fw/firmware.elf
 
+      - name: Generate SBOM (CycloneDX 1.5)
+        run: |
+          docker run --rm -e SBOM_VERSION="${{ github.sha }}" \
+            -v "$PWD":/work stm32-ci-toolchain \
+            python3 tools/gen_sbom.py \
+              --elf build/fw/firmware.elf --map build/fw/firmware.map \
+              --out build/sbom/firmware.cdx.json
+
+      - name: Validate SBOM (schema + sanity checks)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -q "cyclonedx-python-lib[validation]==11.12.0"
+          .venv/bin/python tools/validate_sbom.py build/sbom/firmware.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: build/sbom/firmware.cdx.json
+
   simulate:
     needs: build-test
     runs-on: ubuntu-24.04
@@ -67,3 +86,18 @@ jobs:
             report.html
             robot_output.xml
           if-no-files-found: ignore
+
+  sbom-scan:
+    needs: build-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: sbom
+      - name: Scan SBOM for known vulnerabilities (Grype)
+        uses: anchore/scan-action@v6
+        with:
+          sbom: sbom/firmware.cdx.json
+          fail-build: true
+          severity-cutoff: high
