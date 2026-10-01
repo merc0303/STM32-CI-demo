@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build toolchain image
+        run: docker build -t stm32-ci-toolchain .
+
+      - name: Static analysis (cppcheck)
+        run: |
+          docker run --rm -v "$PWD":/work stm32-ci-toolchain \
+            cppcheck --enable=warning,style,performance,portability \
+              --error-exitcode=1 --inline-suppr -I src/app -I src/hal src
+
+      - name: Host unit tests + coverage gate
+        run: |
+          docker run --rm -v "$PWD":/work stm32-ci-toolchain bash -c '
+            cmake -S . -B build/host -G Ninja -DBUILD_TESTS=ON -DCOVERAGE=ON &&
+            cmake --build build/host &&
+            ctest --test-dir build/host --output-on-failure &&
+            gcovr -r . --filter "src/app/" --fail-under-line 90 --print-summary build/host'
+
+      - name: Cross-build firmware (arm-none-eabi-gcc)
+        run: |
+          docker run --rm -v "$PWD":/work stm32-ci-toolchain bash -c '
+            cmake -S . -B build/fw -G Ninja \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi.cmake \
+              -DCMAKE_BUILD_TYPE=Release &&
+            cmake --build build/fw'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: build/fw/firmware.elf
+
+  simulate:
+    needs: build-test
+    runs-on: ubuntu-24.04
+    container: antmicro/renode:1.15.3   # verify the tag exists, then keep it pinned
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: build/fw
+      - name: Renode boot test
+        run: renode-test sim/boot.robot
